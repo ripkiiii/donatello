@@ -14,7 +14,7 @@ BUILD  := build
 KERNEL := $(BUILD)/donatello.bin
 
 # Let make find sources in their folders.
-vpath %.c kernel cpu drivers
+vpath %.c kernel cpu drivers lib
 vpath %.s boot cpu
 
 # Objects (flattened into build/). boot.o first out of habit; the linker
@@ -24,7 +24,8 @@ OBJS := $(BUILD)/boot.o \
         $(BUILD)/gdt.o $(BUILD)/gdt_flush.o \
         $(BUILD)/idt.o $(BUILD)/idt_load.o $(BUILD)/isr.o \
         $(BUILD)/irq.o \
-        $(BUILD)/terminal.o $(BUILD)/keyboard.o
+        $(BUILD)/terminal.o $(BUILD)/keyboard.o \
+        $(BUILD)/shell.o $(BUILD)/string.o
 
 all: $(KERNEL)
 

@@ -48,6 +48,29 @@ void term_init(void) {
 	term_update_cursor();
 }
 
+/* Wipe the screen and go home. Same as init minus resetting the color. */
+void term_clear(void) {
+	for (size_t y = 0; y < VGA_HEIGHT; y++)
+		for (size_t x = 0; x < VGA_WIDTH; x++)
+			VGA_MEMORY[y * VGA_WIDTH + x] = vga_entry(' ', term_color);
+	term_row = 0;
+	term_col = 0;
+	term_update_cursor();
+}
+
+/* When the cursor falls off the bottom, shift every row up by one and blank
+ * the last row. VGA has no scroll command — we move the bytes ourselves. */
+static void term_scroll(void) {
+	for (size_t y = 1; y < VGA_HEIGHT; y++)
+		for (size_t x = 0; x < VGA_WIDTH; x++)
+			VGA_MEMORY[(y - 1) * VGA_WIDTH + x] =
+			    VGA_MEMORY[y * VGA_WIDTH + x];
+	for (size_t x = 0; x < VGA_WIDTH; x++)
+		VGA_MEMORY[(VGA_HEIGHT - 1) * VGA_WIDTH + x] =
+		    vga_entry(' ', term_color);
+	term_row = VGA_HEIGHT - 1;
+}
+
 static void term_putchar(char c) {
 	if (c == '\n') {
 		term_col = 0;
@@ -68,6 +91,8 @@ static void term_putchar(char c) {
 			term_row++;
 		}
 	}
+	if (term_row == VGA_HEIGHT)
+		term_scroll();
 	term_update_cursor();
 }
 

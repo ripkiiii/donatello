@@ -6,6 +6,7 @@
 #include "idt.h"
 #include "irq.h"
 #include "keyboard.h"
+#include "shell.h"
 
 void kernel_main(void) {
 	term_init();
@@ -27,8 +28,10 @@ void kernel_main(void) {
 	keyboard_init();   /* register our IRQ1 handler */
 
 	term_setcolor(vga_color(VGA_LIGHT_GREEN, VGA_BLACK));
-	term_write("Keyboard live. Type something:\n\n");
-	term_setcolor(vga_color(VGA_WHITE, VGA_BLACK));
+	term_write("Keyboard live.\n");
+	term_setcolor(vga_color(VGA_LIGHT_GREY, VGA_BLACK));
+
+	shell_init();      /* banner + first prompt (M5) */
 
 	asm volatile ("sti");            /* let hardware interrupts through */
 	for (;;)

@@ -1,11 +1,12 @@
 /* keyboard.c — the IRQ1 handler. Reads a scancode from the keyboard, maps it
- * to an ASCII character, and echoes it to the screen. */
+ * to an ASCII character, and hands it to the shell. The shell owns echoing
+ * now — the driver just turns hardware bytes into characters. */
 
 #include <stdint.h>
 #include "keyboard.h"
 #include "irq.h"
 #include "io.h"
-#include "terminal.h"
+#include "shell.h"
 
 #define KEYBOARD_DATA   0x60   /* read the scancode from here            */
 #define KEYBOARD_STATUS 0x64   /* bit 0 set = a byte is waiting in 0x60  */
@@ -35,10 +36,8 @@ static void keyboard_callback(registers_t* regs) {
 			continue;
 
 		char c = keymap[scancode];
-		if (c) {
-			char s[2] = { c, '\0' };
-			term_write(s);
-		}
+		if (c)
+			shell_input(c);
 	}
 }
 

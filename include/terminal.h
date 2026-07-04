@@ -20,6 +20,7 @@ enum vga_color {
 uint8_t vga_color(enum vga_color fg, enum vga_color bg);
 
 void term_init(void);
+void term_clear(void);
 void term_setcolor(uint8_t color);
 void term_write(const char* s);
 void term_write_dec(uint32_t n);   /* print an unsigned number in decimal */
