@@ -38,6 +38,13 @@ _start:
 	# The stack grows downward, so we start the stack pointer at the TOP.
 	mov $stack_top, %esp
 
+	# The bootloader left us two gifts: eax = magic (proof we were loaded by
+	# a Multiboot loader), ebx = pointer to the info struct (RAM size, etc.).
+	# Push them as kernel_main's arguments — cdecl wants them right-to-left,
+	# so ebx (2nd arg) first, then eax (1st arg).
+	push %ebx
+	push %eax
+
 	# The stage is set. Jump into C.
 	call kernel_main
 

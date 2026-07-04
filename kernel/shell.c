@@ -19,7 +19,9 @@ static char   line[LINE_MAX];
 static size_t line_len;
 
 static void prompt(void) {
-	term_setcolor(vga_color(VGA_LIGHT_GREEN, VGA_BLACK));
+	/* Prompt shows on every line, so it stays neutral (grey) — green is
+	 * reserved for success only. Input echoes white. */
+	term_setcolor(vga_color(VGA_LIGHT_GREY, VGA_BLACK));
 	term_write("donatello> ");
 	term_setcolor(vga_color(VGA_WHITE, VGA_BLACK));
 }
@@ -32,14 +34,22 @@ static void cmd_help(void) {
 	term_write("  clear         wipe the screen\n");
 	term_write("  echo <text>   print text back\n");
 	term_write("  about         what is this OS\n");
+	term_write("  pagefault     touch unmapped memory (tests the MMU)\n");
+}
+
+/* Deliberately read from an address past the identity map. The MMU has no
+ * translation for it, so the CPU raises a page fault (#14) — caught and
+ * reported by isr_handler instead of silently rebooting the machine. */
+static void cmd_pagefault(void) {
+	volatile uint32_t* bad = (uint32_t*)0x40000000;   /* 1 GB — not mapped */
+	term_write("reading 0x40000000...\n");
+	uint32_t x = *bad;
+	(void)x;   /* never reached — the read above faults */
 }
 
 static void cmd_about(void) {
-	term_setcolor(vga_color(VGA_LIGHT_GREEN, VGA_BLACK));
-	term_write("Donatello");
-	term_setcolor(vga_color(VGA_WHITE, VGA_BLACK));
-	term_write(" - an OS from scratch (i686). boot.s -> GDT -> IDT -> IRQ\n");
-	term_write("-> keyboard -> this shell. No libc, no Linux, all ours.\n");
+	term_write("Donatello - an OS from scratch (i686). boot.s -> GDT -> IDT\n");
+	term_write("-> IRQ -> keyboard -> this shell. No libc, no Linux, all ours.\n");
 }
 
 /* --- dispatch ------------------------------------------------------- */
@@ -64,10 +74,11 @@ static void run_line(void) {
 			arg++;
 	}
 
-	if      (strcmp(cmd, "help")  == 0) cmd_help();
-	else if (strcmp(cmd, "clear") == 0) term_clear();
-	else if (strcmp(cmd, "about") == 0) cmd_about();
-	else if (strcmp(cmd, "echo")  == 0) {
+	if      (strcmp(cmd, "help")      == 0) cmd_help();
+	else if (strcmp(cmd, "clear")     == 0) term_clear();
+	else if (strcmp(cmd, "about")     == 0) cmd_about();
+	else if (strcmp(cmd, "pagefault") == 0) cmd_pagefault();
+	else if (strcmp(cmd, "echo")      == 0) {
 		term_write(arg);
 		term_write("\n");
 	} else {

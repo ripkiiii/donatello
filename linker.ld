@@ -36,4 +36,8 @@ SECTIONS
 		*(COMMON)
 		*(.bss)
 	}
+
+	/* Mark where the kernel image ends. The physical memory manager reads
+	 * this so it never hands out RAM the kernel is sitting on. */
+	kernel_end = .;
 }

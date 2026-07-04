@@ -81,6 +81,25 @@ void idt_init(void) {
 
 /* Every interrupt funnels here through the common stub in isr.s. */
 void isr_handler(registers_t* regs) {
+	/* Vector 14 = page fault. The CPU leaves the address that faulted in the
+	 * CR2 register, and pushes an error code whose low bits say why. */
+	if (regs->int_no == 14) {
+		uint32_t addr;
+		asm volatile ("mov %%cr2, %0" : "=r"(addr));
+
+		term_setcolor(vga_color(VGA_LIGHT_RED, VGA_BLACK));
+		term_write("\nPAGE FAULT at 0x");
+		term_write_hex(addr);
+		term_write(" (");
+		term_write((regs->err_code & 0x1) ? "protection" : "not-present");
+		term_write((regs->err_code & 0x2) ? ", write"    : ", read");
+		term_write(").\nhalting.\n");
+
+		/* No recovery yet — freeze cleanly instead of triple-faulting. */
+		for (;;)
+			asm volatile ("cli; hlt");
+	}
+
 	term_setcolor(vga_color(VGA_LIGHT_RED, VGA_BLACK));
 	term_write("  [interrupt] caught vector ");
 	term_write_dec(regs->int_no);

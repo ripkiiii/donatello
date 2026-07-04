@@ -115,3 +115,10 @@ void term_write_dec(uint32_t n) {
 	while (i-- > 0)
 		term_putchar(buf[i]);
 }
+
+/* Print a 32-bit value as 8 hex digits (always padded — best for addresses). */
+void term_write_hex(uint32_t n) {
+	static const char digits[] = "0123456789ABCDEF";
+	for (int shift = 28; shift >= 0; shift -= 4)
+		term_putchar(digits[(n >> shift) & 0xF]);
+}

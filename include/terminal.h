@@ -24,5 +24,6 @@ void term_clear(void);
 void term_setcolor(uint8_t color);
 void term_write(const char* s);
 void term_write_dec(uint32_t n);   /* print an unsigned number in decimal */
+void term_write_hex(uint32_t n);   /* print a 32-bit value as 8 hex digits */
 
 #endif
