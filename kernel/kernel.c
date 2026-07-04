@@ -12,6 +12,7 @@
 #include "pmm.h"
 #include "paging.h"
 #include "heap.h"
+#include "fs.h"
 
 /* Set by the linker (linker.ld) at the very end of the kernel image. We take
  * its ADDRESS, not its value — the symbol marks a location, not a number. */
@@ -69,6 +70,13 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 
 	/* --- heap (M6c) ------------------------------------------------ */
 	kheap_init();      /* kmalloc/kfree on top of the PMM */
+
+	/* --- filesystem (M9) -------------------------------------------- */
+	fs_init();         /* read the file table off disk (sector 0) */
+	term_setcolor(vga_color(VGA_LIGHT_GREEN, VGA_BLACK));
+	term_write("Filesystem ready (");
+	term_write_dec(fs_count());
+	term_write(" file(s) on disk).\n");
 
 	term_setcolor(vga_color(VGA_LIGHT_GREY, VGA_BLACK));
 	shell_init();      /* banner + first prompt (M5) */

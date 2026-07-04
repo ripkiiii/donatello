@@ -19,6 +19,8 @@
 #include "pmm.h"
 #include "paging.h"
 #include "usermode.h"
+#include "ata.h"
+#include "fs.h"
 
 #define LINE_MAX 128
 
@@ -43,16 +45,74 @@ static void cmd_help(void) {
 	term_write("  about         what is this OS\n");
 	term_write("  pagefault     touch unmapped memory (tests the MMU)\n");
 	term_write("  heaptest      alloc/free/reuse a few blocks (tests kmalloc)\n");
-	term_write("  run           load+execute the embedded test ELF program\n");
-	term_write("  usermode      run a program in RING 3 (syscall + isolation test)\n");
+	term_write("  ls            list files on the disk\n");
+	term_write("  run <name>    load a file from disk and execute it (ring 0)\n");
+	term_write("  usermode      run 'usertest' in RING 3 (syscall + isolation test)\n");
+	term_write("  diskread      read sector 0 off the ATA disk (tests the driver)\n");
 }
 
-/* M7: hand the embedded test binary to the ELF loader. If it's valid,
- * elf_load() jumps into it and never returns — everything after that call
- * only runs if loading failed. */
-static void cmd_run(void) {
-	term_write("run: loading embedded hello.elf...\n");
-	elf_load(_binary_hello_elf_start);
+/* M9 (9a): read the very first sector off disk and print it back as text,
+ * so a human can visually confirm the bytes that came back are the exact
+ * bytes the Makefile stamped into the test disk image — proof the driver
+ * is talking to real (virtual) hardware, not just returning zeroed memory
+ * that happens to look like success. */
+static void cmd_diskread(void) {
+	uint8_t buf[ATA_SECTOR_SIZE];
+
+	if (!ata_read_sector(0, buf)) {
+		term_setcolor(vga_color(VGA_LIGHT_RED, VGA_BLACK));
+		term_write("diskread: ATA read error\n");
+		term_setcolor(vga_color(VGA_WHITE, VGA_BLACK));
+		return;
+	}
+
+	term_write("sector 0, first 32 bytes as text: \"");
+	for (int i = 0; i < 32; i++) {
+		char c = buf[i];
+		char s[2] = { (c >= 32 && c < 127) ? c : '.', '\0' };
+		term_write(s);
+	}
+	term_write("\"\n");
+}
+
+/* M9: list what's on disk, straight from the file table fs_init() already
+ * read at boot — no extra disk access needed just to list names. */
+static void cmd_ls(void) {
+	int n = fs_count();
+	if (n == 0) {
+		term_write("(no files on disk)\n");
+		return;
+	}
+	for (int i = 0; i < n; i++) {
+		const fs_entry_t* e = fs_entry_at(i);
+		term_write("  ");
+		term_write(e->name);
+		term_write("  (");
+		term_write_dec(e->size_bytes);
+		term_write(" bytes)\n");
+	}
+}
+
+/* M9: find `name` on disk, read its bytes into fs_load()'s buffer, hand
+ * that to the ELF loader (ring 0, same as M7's original behavior — just
+ * sourced from disk instead of an embedded blob). If it's valid, elf_load()
+ * jumps into it and never returns; everything after only runs on failure. */
+static void cmd_run(const char* name) {
+	if (!*name) {
+		term_write("usage: run <name>  (try 'ls' to see what's on disk)\n");
+		return;
+	}
+
+	uint32_t size;
+	const uint8_t* data = fs_load(name, &size);
+	if (!data)
+		return;   /* fs_load already printed why */
+
+	term_write("run: loaded ");
+	term_write_dec(size);
+	term_write(" bytes, parsing ELF...\n");
+
+	elf_load(data);
 	term_setcolor(vga_color(VGA_LIGHT_RED, VGA_BLACK));
 	term_write("run: elf_load returned (it shouldn't have) -- load failed.\n");
 	term_setcolor(vga_color(VGA_WHITE, VGA_BLACK));
@@ -95,12 +155,18 @@ static void cmd_heaptest(void) {
 	kfree(d);
 }
 
-/* M8: load the ring-3 test program, grant it (and only it) access to its
- * own code/data and a dedicated stack, give the CPU a safe kernel stack to
- * use if it's interrupted while running, then drop into ring 3. */
+/* M8 (now M9-sourced): load the ring-3 test program off disk, grant it
+ * (and only it) access to its own code/data and a dedicated stack, give
+ * the CPU a safe kernel stack to use if it's interrupted while running,
+ * then drop into ring 3. */
 static void cmd_usermode(void) {
+	uint32_t size;
+	const uint8_t* data = fs_load("usertest", &size);
+	if (!data)
+		return;   /* fs_load already printed why */
+
 	uint32_t range_start, range_end;
-	uint32_t entry = elf_parse(_binary_usertest_elf_start, &range_start, &range_end);
+	uint32_t entry = elf_parse(data, &range_start, &range_end);
 	if (!entry)
 		return;   /* elf_parse already printed why */
 
@@ -165,8 +231,10 @@ static void run_line(void) {
 	else if (strcmp(cmd, "about")     == 0) cmd_about();
 	else if (strcmp(cmd, "pagefault") == 0) cmd_pagefault();
 	else if (strcmp(cmd, "heaptest")  == 0) cmd_heaptest();
-	else if (strcmp(cmd, "run")       == 0) cmd_run();
+	else if (strcmp(cmd, "run")       == 0) cmd_run(arg);
 	else if (strcmp(cmd, "usermode")  == 0) cmd_usermode();
+	else if (strcmp(cmd, "diskread")  == 0) cmd_diskread();
+	else if (strcmp(cmd, "ls")        == 0) cmd_ls();
 	else if (strcmp(cmd, "echo")      == 0) {
 		term_write(arg);
 		term_write("\n");

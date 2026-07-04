@@ -17,6 +17,18 @@ static inline uint8_t inb(uint16_t port) {
 	return ret;
 }
 
+/* 16-bit variants — the ATA disk's data register (M9) transfers a whole
+ * sector as a stream of 16-bit words, not bytes. */
+static inline void outw(uint16_t port, uint16_t val) {
+	asm volatile ("outw %0, %1" : : "a"(val), "Nd"(port));
+}
+
+static inline uint16_t inw(uint16_t port) {
+	uint16_t ret;
+	asm volatile ("inw %1, %0" : "=a"(ret) : "Nd"(port));
+	return ret;
+}
+
 /* Write to an unused port to burn a tiny, known delay — old hardware (the
  * PIC) needs a moment between commands. */
 static inline void io_wait(void) {
