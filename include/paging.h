@@ -7,7 +7,14 @@
 #ifndef PAGING_H
 #define PAGING_H
 
+#include <stdint.h>
+
 /* Build the identity map for all detected RAM, then enable the MMU. */
 void paging_init(void);
+
+/* Mark a range as ring-3 accessible (M8). Everything else stays
+ * supervisor-only — this is what makes user-mode isolation real rather
+ * than just a CPU privilege check. */
+void paging_set_user_range(uint32_t vaddr, uint32_t size);
 
 #endif

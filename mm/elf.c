@@ -10,7 +10,14 @@
  * There's usually more (section headers, symbol tables, relocations) but
  * none of that is needed just to RUN something — only to link or debug it.
  * A loader's job is narrow: copy the LOAD segments into place, then jump to
- * the entry point. That's it. */
+ * the entry point. That's it.
+ *
+ * M8 split this into two layers: elf_parse() does the validating and
+ * copying and hands back the entry point (and the memory range touched)
+ * without jumping anywhere; elf_load() (M7's original entry point,
+ * unchanged behavior) calls it and then jumps in ring 0, same as before.
+ * M8's ring-3 path calls elf_parse() directly so it can mark the loaded
+ * range ring-3-accessible BEFORE handing control to enter_usermode(). */
 
 #include <stdint.h>
 #include "elf.h"
@@ -80,7 +87,7 @@ static int elf_valid(const elf32_ehdr_t* eh) {
 	return 1;
 }
 
-int elf_load(const uint8_t* data) {
+uint32_t elf_parse(const uint8_t* data, uint32_t* out_start, uint32_t* out_end) {
 	const elf32_ehdr_t* eh = (const elf32_ehdr_t*)data;
 
 	if (!elf_valid(eh))
@@ -96,10 +103,14 @@ int elf_load(const uint8_t* data) {
 	/* Copy every LOAD segment to the address it was linked for. Because
 	 * paging identity-maps all RAM, "the address it was linked for" and
 	 * "a real, writable memory location" are the same number — no new
-	 * page-table entries needed at this stage (that changes once user
-	 * space gets its own address layout in M8). */
-	const elf32_phdr_t* ph =
-	    (const elf32_phdr_t*)(data + eh->e_phoff);
+	 * page-table entries needed to make the copy itself work. (Whether
+	 * that memory is ring-3 ACCESSIBLE is a separate question — that's
+	 * the U/S bit, set by the caller via paging_set_user_range() for the
+	 * ring-3 path, M8.) */
+	const elf32_phdr_t* ph = (const elf32_phdr_t*)(data + eh->e_phoff);
+
+	uint32_t range_start = 0xFFFFFFFF;
+	uint32_t range_end   = 0;
 
 	for (int i = 0; i < eh->e_phnum; i++) {
 		if (ph[i].p_type != PT_LOAD)
@@ -116,7 +127,23 @@ int elf_load(const uint8_t* data) {
 		if (ph[i].p_memsz > ph[i].p_filesz)
 			memset(dest + ph[i].p_filesz, 0,
 			       ph[i].p_memsz - ph[i].p_filesz);
+
+		if (ph[i].p_vaddr < range_start)
+			range_start = ph[i].p_vaddr;
+		if (ph[i].p_vaddr + ph[i].p_memsz > range_end)
+			range_end = ph[i].p_vaddr + ph[i].p_memsz;
 	}
+
+	if (out_start) *out_start = range_start;
+	if (out_end)   *out_end   = range_end;
+
+	return eh->e_entry;
+}
+
+int elf_load(const uint8_t* data) {
+	uint32_t entry = elf_parse(data, NULL, NULL);
+	if (!entry)
+		return 0;
 
 	term_setcolor(vga_color(VGA_LIGHT_GREEN, VGA_BLACK));
 	term_write("elf: jumping to entry point.\n");
@@ -124,8 +151,8 @@ int elf_load(const uint8_t* data) {
 	/* No process table, no return address to come back to — we ARE this
 	 * program now. A successful load doesn't return; if execution ever
 	 * gets past this call, something has gone very wrong. */
-	void (*entry)(void) = (void (*)(void))eh->e_entry;
-	entry();
+	void (*fn)(void) = (void (*)(void))entry;
+	fn();
 
 	return 1;   /* unreachable in practice; kept honest for the prototype */
 }

@@ -41,6 +41,9 @@ extern void irq4(void),  irq5(void),  irq6(void),  irq7(void);
 extern void irq8(void),  irq9(void),  irq10(void), irq11(void);
 extern void irq12(void), irq13(void), irq14(void), irq15(void);
 
+/* The syscall gate (M8), also in isr.s. */
+extern void isr128(void);
+
 static void idt_set_entry(int n, uint32_t handler, uint16_t selector, uint8_t flags) {
 	idt[n].base_low  =  handler        & 0xFFFF;
 	idt[n].base_high = (handler >> 16) & 0xFFFF;
@@ -76,11 +79,43 @@ void idt_init(void) {
 	for (int i = 0; i < 16; i++)
 		idt_set_entry(32 + i, (uint32_t)irqs[i], 0x08, 0x8E);
 
+	/* The syscall gate (M8): vector 128, same "kernel code, 32-bit
+	 * interrupt gate" shape as everything else, but flags 0xEE instead of
+	 * 0x8E — the DPL bits (6:5) are 11 instead of 00. That's what lets
+	 * ring 3 code invoke `int $0x80` at all: the CPU only allows a
+	 * software `int n` when the CURRENT privilege level is <= the gate's
+	 * DPL. Every other gate stays DPL 0 on purpose — exceptions and IRQs
+	 * are CPU/hardware triggered, never subject to this check, so there's
+	 * no reason to widen them and every reason not to. */
+	idt_set_entry(128, (uint32_t)isr128, 0x08, 0xEE);
+
 	idt_load((uint32_t)&idt_pointer);
 }
 
 /* Every interrupt funnels here through the common stub in isr.s. */
 void isr_handler(registers_t* regs) {
+	/* Vector 13 = general protection fault — the CPU's catch-all for "you
+	 * tried something your privilege level doesn't allow": a privileged
+	 * instruction from ring 3 (cli, hlt, writing CR0/CR3, ...), a bad
+	 * segment selector, and a handful of other violations. Unlike a page
+	 * fault, GPF has no single register that says WHY (no CR2 equivalent)
+	 * — the error code sometimes names a segment selector, sometimes 0.
+	 * We don't decode it further; the point here is containment, not
+	 * diagnostics. Without this special case, isr_handler's default path
+	 * below just prints and returns via iret straight back to the SAME
+	 * faulting instruction (GPF never advances EIP) — an infinite
+	 * print-and-refault loop. Halting cleanly avoids that, matching the
+	 * page-fault handler right below. */
+	if (regs->int_no == 13) {
+		term_setcolor(vga_color(VGA_LIGHT_RED, VGA_BLACK));
+		term_write("\nGENERAL PROTECTION FAULT (error code 0x");
+		term_write_hex(regs->err_code);
+		term_write(").\nhalting.\n");
+
+		for (;;)
+			asm volatile ("cli; hlt");
+	}
+
 	/* Vector 14 = page fault. The CPU leaves the address that faulted in the
 	 * CR2 register, and pushes an error code whose low bits say why. */
 	if (regs->int_no == 14) {

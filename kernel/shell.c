@@ -15,6 +15,10 @@
 #include "string.h"
 #include "heap.h"
 #include "elf.h"
+#include "gdt.h"
+#include "pmm.h"
+#include "paging.h"
+#include "usermode.h"
 
 #define LINE_MAX 128
 
@@ -40,6 +44,7 @@ static void cmd_help(void) {
 	term_write("  pagefault     touch unmapped memory (tests the MMU)\n");
 	term_write("  heaptest      alloc/free/reuse a few blocks (tests kmalloc)\n");
 	term_write("  run           load+execute the embedded test ELF program\n");
+	term_write("  usermode      run a program in RING 3 (syscall + isolation test)\n");
 }
 
 /* M7: hand the embedded test binary to the ELF loader. If it's valid,
@@ -90,6 +95,44 @@ static void cmd_heaptest(void) {
 	kfree(d);
 }
 
+/* M8: load the ring-3 test program, grant it (and only it) access to its
+ * own code/data and a dedicated stack, give the CPU a safe kernel stack to
+ * use if it's interrupted while running, then drop into ring 3. */
+static void cmd_usermode(void) {
+	uint32_t range_start, range_end;
+	uint32_t entry = elf_parse(_binary_usertest_elf_start, &range_start, &range_end);
+	if (!entry)
+		return;   /* elf_parse already printed why */
+
+	uint32_t user_stack_frame = pmm_alloc_frame();
+	uint32_t kernel_stack_frame = pmm_alloc_frame();
+	if (!user_stack_frame || !kernel_stack_frame) {
+		term_setcolor(vga_color(VGA_LIGHT_RED, VGA_BLACK));
+		term_write("usermode: out of physical memory\n");
+		term_setcolor(vga_color(VGA_WHITE, VGA_BLACK));
+		return;
+	}
+	uint32_t user_stack_top = user_stack_frame + FRAME_SIZE;
+
+	/* Ring 3 may touch its own code/data and its own stack. Nothing else —
+	 * VGA memory, the kernel, every other frame of RAM — stays
+	 * supervisor-only, which is what the program's own second half tries
+	 * to prove by deliberately violating it. */
+	paging_set_user_range(range_start, range_end - range_start);
+	paging_set_user_range(user_stack_frame, FRAME_SIZE);
+
+	/* Must be set before the FIRST trip into ring 3 — the CPU consults
+	 * this the instant any interrupt (the syscall, or the page fault
+	 * we're about to provoke) fires while CPL is 3. */
+	tss_set_kernel_stack(kernel_stack_frame + FRAME_SIZE);
+
+	term_setcolor(vga_color(VGA_LIGHT_GREEN, VGA_BLACK));
+	term_write("usermode: entering ring 3.\n");
+
+	enter_usermode(entry, user_stack_top);
+	/* Unreachable on success — enter_usermode() never returns. */
+}
+
 static void cmd_about(void) {
 	term_write("Donatello - an OS from scratch (i686). boot.s -> GDT -> IDT\n");
 	term_write("-> IRQ -> keyboard -> this shell. No libc, no Linux, all ours.\n");
@@ -123,6 +166,7 @@ static void run_line(void) {
 	else if (strcmp(cmd, "pagefault") == 0) cmd_pagefault();
 	else if (strcmp(cmd, "heaptest")  == 0) cmd_heaptest();
 	else if (strcmp(cmd, "run")       == 0) cmd_run();
+	else if (strcmp(cmd, "usermode")  == 0) cmd_usermode();
 	else if (strcmp(cmd, "echo")      == 0) {
 		term_write(arg);
 		term_write("\n");

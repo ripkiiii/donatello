@@ -19,11 +19,26 @@
 extern uint8_t _binary_hello_elf_start[];
 extern uint8_t _binary_hello_elf_end[];
 
+/* The M8 ring-3 test program, embedded the same way. */
+extern uint8_t _binary_usertest_elf_start[];
+extern uint8_t _binary_usertest_elf_end[];
+
+/* Validates and copies an ELF32 executable's PT_LOAD segments into place,
+ * WITHOUT jumping to it. Returns the entry point address (0 = invalid
+ * file — details already printed). If out_start/out_end are non-NULL,
+ * they're filled with the [lowest vaddr, highest vaddr+size) range the
+ * segments occupy — callers that need to grant ring-3 access to exactly
+ * that memory (M8) use this instead of elf_load(). */
+uint32_t elf_parse(const uint8_t* data, uint32_t* out_start, uint32_t* out_end);
+
 /* Returns 1 and calls into the program's entry point if `data` is a valid
  * ELF32 executable this loader understands. Returns 0 (and prints why) on
  * anything it can't or won't run. This function only returns at all if the
  * ELF failed to load — a successful load jumps away and never comes back
- * (there's no process to return TO yet; that needs a scheduler, M8+). */
+ * (there's no process to return TO yet; that needs a scheduler, M8+).
+ *
+ * Runs the entry point in ring 0 — no isolation. See M8's `enter_usermode`
+ * path (via elf_parse()) for running one in ring 3 instead. */
 int elf_load(const uint8_t* data);
 
 #endif

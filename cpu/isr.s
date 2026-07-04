@@ -145,3 +145,47 @@ irq_common:
 	popa
 	add $8, %esp
 	iret
+
+# --- syscall (M8) -----------------------------------------------------
+# `int $0x80` from ring 3 lands here. Like the exceptions above, no error
+# code is pushed for a software interrupt, so we push a dummy 0 to keep the
+# same registers_t layout. This IS the ring 3 -> ring 0 transition the TSS
+# exists for: the CPU switches to the TSS's esp0/ss0 automatically before
+# even reaching this stub, so everything below already runs on a proper
+# kernel stack.
+.global isr128
+.type isr128, @function
+isr128:
+	push $0
+	push $128
+	jmp syscall_common
+
+.extern syscall_handler
+
+syscall_common:
+	pusha
+
+	xor %eax, %eax
+	mov %ds, %ax
+	push %eax
+
+	mov $0x10, %ax
+	mov %ax, %ds
+	mov %ax, %es
+	mov %ax, %fs
+	mov %ax, %gs
+
+	push %esp
+	call syscall_handler   # decides what to do based on regs->eax
+	add $4, %esp
+
+	pop %eax
+	mov %ax, %ds
+	mov %ax, %es
+	mov %ax, %fs
+	mov %ax, %gs
+
+	popa
+	add $8, %esp
+	iret              # CS in the frame still says "user" (RPL 3) — iret
+	                  # drops us straight back to ring 3 to resume there

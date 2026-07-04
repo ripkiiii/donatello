@@ -28,7 +28,8 @@ OBJS := $(BUILD)/boot.o \
         $(BUILD)/terminal.o $(BUILD)/keyboard.o \
         $(BUILD)/shell.o $(BUILD)/string.o \
         $(BUILD)/pmm.o $(BUILD)/paging.o $(BUILD)/heap.o \
-        $(BUILD)/elf.o $(BUILD)/hello_blob.o
+        $(BUILD)/elf.o $(BUILD)/hello_blob.o \
+        $(BUILD)/usermode.o $(BUILD)/syscall.o $(BUILD)/usertest_blob.o
 
 all: $(KERNEL)
 
@@ -49,6 +50,18 @@ $(BUILD)/hello.elf: $(BUILD)/hello.o userprogs/hello.ld
 
 $(BUILD)/hello_blob.o: $(BUILD)/hello.elf
 	cd $(BUILD) && $(LD) -r -b binary -o hello_blob.o hello.elf
+
+# --- M8: the ring-3 test program -----------------------------------------
+# Same embedding trick, different program: usertest.c makes a syscall, then
+# deliberately tries a direct hardware write to prove ring 3 can't.
+$(BUILD)/usertest.o: userprogs/usertest.c | $(BUILD)
+	$(CC) -c $< -o $@ -std=gnu99 -ffreestanding -O2 -Wall -Wextra
+
+$(BUILD)/usertest.elf: $(BUILD)/usertest.o userprogs/usertest.ld
+	$(CC) -T userprogs/usertest.ld -o $@ $< -ffreestanding -O2 -nostdlib
+
+$(BUILD)/usertest_blob.o: $(BUILD)/usertest.elf
+	cd $(BUILD) && $(LD) -r -b binary -o usertest_blob.o usertest.elf
 
 # Link everything into one kernel image using our memory map.
 $(KERNEL): $(OBJS) linker.ld

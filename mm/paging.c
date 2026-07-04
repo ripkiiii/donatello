@@ -22,6 +22,7 @@
 
 #define PAGE_PRESENT 0x1        /* entry is valid              */
 #define PAGE_RW      0x2        /* writable                    */
+#define PAGE_USER    0x4        /* ring 3 may access this page */
 
 #define ENTRIES      1024       /* entries per directory / table */
 #define TABLE_SPAN   0x400000   /* one page table covers 4 MB    */
@@ -73,4 +74,29 @@ void paging_init(void) {
 	term_write(" MB (");
 	term_write_dec(num_tables + 1);
 	term_write(" frames of tables).\n");
+}
+
+/* Mark [vaddr, vaddr+size) as accessible from ring 3 (M8). Everything else
+ * — the kernel, VGA memory, all other RAM — stays supervisor-only, so a
+ * ring 3 program can only touch the specific pages we hand it here.
+ *
+ * The U/S bit must be set on BOTH levels of the walk: the directory entry
+ * AND the table entry. The CPU effectively ANDs permissions along the
+ * path — if either level says "supervisor only", the access is denied
+ * regardless of what the other level says. Setting it on the directory
+ * entry is safe even though that entry covers a whole 4 MB table shared
+ * with other (still kernel-only) pages: real access control stays
+ * per-page at the table level; the directory bit is just a prerequisite. */
+void paging_set_user_range(uint32_t vaddr, uint32_t size) {
+	uint32_t start = vaddr & ~0xFFF;
+	uint32_t end   = (vaddr + size + 0xFFF) & ~0xFFF;
+
+	for (uint32_t addr = start; addr < end; addr += FRAME_SIZE) {
+		uint32_t dir_idx = addr >> 22;
+		uint32_t tbl_idx = (addr >> 12) & 0x3FF;
+		uint32_t* table  = (uint32_t*)(page_directory[dir_idx] & ~0xFFF);
+
+		page_directory[dir_idx] |= PAGE_USER;
+		table[tbl_idx]          |= PAGE_USER;
+	}
 }
