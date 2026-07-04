@@ -14,6 +14,7 @@
 #include "terminal.h"
 #include "string.h"
 #include "heap.h"
+#include "elf.h"
 
 #define LINE_MAX 128
 
@@ -38,6 +39,18 @@ static void cmd_help(void) {
 	term_write("  about         what is this OS\n");
 	term_write("  pagefault     touch unmapped memory (tests the MMU)\n");
 	term_write("  heaptest      alloc/free/reuse a few blocks (tests kmalloc)\n");
+	term_write("  run           load+execute the embedded test ELF program\n");
+}
+
+/* M7: hand the embedded test binary to the ELF loader. If it's valid,
+ * elf_load() jumps into it and never returns — everything after that call
+ * only runs if loading failed. */
+static void cmd_run(void) {
+	term_write("run: loading embedded hello.elf...\n");
+	elf_load(_binary_hello_elf_start);
+	term_setcolor(vga_color(VGA_LIGHT_RED, VGA_BLACK));
+	term_write("run: elf_load returned (it shouldn't have) -- load failed.\n");
+	term_setcolor(vga_color(VGA_WHITE, VGA_BLACK));
 }
 
 /* Deliberately read from an address past the identity map. The MMU has no
@@ -109,6 +122,7 @@ static void run_line(void) {
 	else if (strcmp(cmd, "about")     == 0) cmd_about();
 	else if (strcmp(cmd, "pagefault") == 0) cmd_pagefault();
 	else if (strcmp(cmd, "heaptest")  == 0) cmd_heaptest();
+	else if (strcmp(cmd, "run")       == 0) cmd_run();
 	else if (strcmp(cmd, "echo")      == 0) {
 		term_write(arg);
 		term_write("\n");
