@@ -26,7 +26,7 @@ OBJS := $(BUILD)/boot.o \
         $(BUILD)/irq.o \
         $(BUILD)/terminal.o $(BUILD)/keyboard.o \
         $(BUILD)/shell.o $(BUILD)/string.o \
-        $(BUILD)/pmm.o $(BUILD)/paging.o
+        $(BUILD)/pmm.o $(BUILD)/paging.o $(BUILD)/heap.o
 
 all: $(KERNEL)
 

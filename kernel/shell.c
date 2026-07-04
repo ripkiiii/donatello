@@ -9,9 +9,11 @@
  * ever becomes slow. */
 
 #include <stddef.h>
+#include <stdint.h>
 #include "shell.h"
 #include "terminal.h"
 #include "string.h"
+#include "heap.h"
 
 #define LINE_MAX 128
 
@@ -35,6 +37,7 @@ static void cmd_help(void) {
 	term_write("  echo <text>   print text back\n");
 	term_write("  about         what is this OS\n");
 	term_write("  pagefault     touch unmapped memory (tests the MMU)\n");
+	term_write("  heaptest      alloc/free/reuse a few blocks (tests kmalloc)\n");
 }
 
 /* Deliberately read from an address past the identity map. The MMU has no
@@ -45,6 +48,33 @@ static void cmd_pagefault(void) {
 	term_write("reading 0x40000000...\n");
 	uint32_t x = *bad;
 	(void)x;   /* never reached — the read above faults */
+}
+
+/* Alloc three blocks, free the MIDDLE one, alloc a fourth — if the heap is
+ * correct, the fourth allocation reuses exactly the address freed, proving
+ * kmalloc actually searches the free list instead of just growing forever. */
+static void cmd_heaptest(void) {
+	term_write("a = kmalloc(64), b = kmalloc(64), c = kmalloc(64)\n");
+	void* a = kmalloc(64);
+	void* b = kmalloc(64);
+	void* c = kmalloc(64);
+	term_write("  a=0x"); term_write_hex((uint32_t)a); term_write("\n");
+	term_write("  b=0x"); term_write_hex((uint32_t)b); term_write("\n");
+	term_write("  c=0x"); term_write_hex((uint32_t)c); term_write("\n");
+
+	term_write("kfree(b)\n");
+	kfree(b);
+
+	term_write("d = kmalloc(64) -- should reuse b's address:\n");
+	void* d = kmalloc(64);
+	term_write("  d=0x"); term_write_hex((uint32_t)d);
+	term_setcolor(vga_color((d == b) ? VGA_LIGHT_GREEN : VGA_LIGHT_RED, VGA_BLACK));
+	term_write((d == b) ? "  REUSED (correct)\n" : "  NOT reused (bug!)\n");
+	term_setcolor(vga_color(VGA_WHITE, VGA_BLACK));
+
+	kfree(a);
+	kfree(c);
+	kfree(d);
 }
 
 static void cmd_about(void) {
@@ -78,6 +108,7 @@ static void run_line(void) {
 	else if (strcmp(cmd, "clear")     == 0) term_clear();
 	else if (strcmp(cmd, "about")     == 0) cmd_about();
 	else if (strcmp(cmd, "pagefault") == 0) cmd_pagefault();
+	else if (strcmp(cmd, "heaptest")  == 0) cmd_heaptest();
 	else if (strcmp(cmd, "echo")      == 0) {
 		term_write(arg);
 		term_write("\n");

@@ -11,6 +11,7 @@
 #include "multiboot.h"
 #include "pmm.h"
 #include "paging.h"
+#include "heap.h"
 
 /* Set by the linker (linker.ld) at the very end of the kernel image. We take
  * its ADDRESS, not its value — the symbol marks a location, not a number. */
@@ -65,6 +66,9 @@ void kernel_main(uint32_t magic, multiboot_info_t* mbi) {
 	paging_init();     /* identity-map RAM + turn the MMU on */
 	term_setcolor(vga_color(VGA_LIGHT_GREEN, VGA_BLACK));
 	term_write("MMU enabled.\n");
+
+	/* --- heap (M6c) ------------------------------------------------ */
+	kheap_init();      /* kmalloc/kfree on top of the PMM */
 
 	term_setcolor(vga_color(VGA_LIGHT_GREY, VGA_BLACK));
 	shell_init();      /* banner + first prompt (M5) */
